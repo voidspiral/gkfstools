@@ -1,0 +1,4 @@
+/cmd/cmd
+/cmd/gkfs_host.txt.pid
+/cmd/hash
+/cmd/libhash.so

@@ -198,7 +198,7 @@ func (cm *Comm) Barrier() error {
 	return Error(C.MPI_Barrier(cm.comm), "Barrier")
 }
 
-func WTime() float64 {
-	var t float64 = C.MPI_WTime()
-	return t
-}
+//func WTime() float64 {
+//	var t float64 = C.MPI_WTime()
+//	return t
+//}

@@ -16,7 +16,7 @@ import (
 /*
 #cgo CXXFLAGS: -std=c++14
 #cgo LDFLAGS: -L. -lhash -lstdc++
-extern unsigned long cal_hash(const char* val);
+extern unsigned long Cal_Hash(const char* val);
 */
 import "C"
 
@@ -92,6 +92,7 @@ func chnkCountForOffset(offset int64, count uint64, chnkSize uint64) uint64 {
 	return uint64((chnkEnd >> uint64(math.Log2(float64(chnkSize)))) -
 		(chnkStart >> uint64(math.Log2(float64(chnkSize)))) + 1)
 }
+
 func GetDaemonPidByRank(hostFile string, line int) (pid string) {
 	file, err := os.Open(hostFile)
 	if err != nil {

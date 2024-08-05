@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import "C"
+import (
+	"log"
+	"os"
+	"testing"
+)
 
 func TestGetDaemonPidByRank(t *testing.T) {
 	type args struct {
@@ -25,4 +30,18 @@ func TestGetDaemonPidByRank(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_chnkCountForOffset(t *testing.T) {
+	filename := "/1G"
+	f, err := os.Open(filename)
+	if err != nil {
+		panic("open file error")
+	}
+	file, _ := f.Stat()
+	size := file.Size()
+	countsize := int64(4)
+	ranksize := size / countsize
+	hashValue := C.Cal_Hash()
+	log.Println(ranksize, hashValue)
 }

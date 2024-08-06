@@ -1,10 +1,10 @@
 package main
 
-import "C"
 import (
 	"log"
 	"os"
 	"testing"
+	"tools/internal/hash"
 )
 
 func TestGetDaemonPidByRank(t *testing.T) {
@@ -32,16 +32,25 @@ func TestGetDaemonPidByRank(t *testing.T) {
 	}
 }
 
+// use of cgo in test main_test.go not supported
 func Test_chnkCountForOffset(t *testing.T) {
-	filename := "/1G"
+	filename := "../test/1G"
 	f, err := os.Open(filename)
 	if err != nil {
 		panic("open file error")
 	}
 	file, _ := f.Stat()
 	size := file.Size()
-	countsize := int64(4)
-	ranksize := size / countsize
-	hashValue := C.Cal_Hash()
-	log.Println(ranksize, hashValue)
+	countSize := int64(4)
+	rankSize := size / countSize
+	blockSize := uint64(512 * 1024)
+	chnkStart := blockIndex(0, blockSize)
+	chnkEnd := blockIndex(0+uint64(size)-1, blockSize)
+	totalChunks := blockCount(0, uint64(size), blockSize)
+	log.Println(chnkStart, chnkEnd, totalChunks)
+	hashValue := hash.GetHash(filename)
+	log.Println(rankSize, hashValue)
+	filename = "/1G"
+	hashValue = hash.GetHash(filename)
+	log.Println(filename)
 }

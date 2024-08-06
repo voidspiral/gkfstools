@@ -6,7 +6,7 @@ CFLAGS = -fPIC
 LIBS = -shared
 
 # Output
-TARGET = libhash.so
+TARGET = stage-in/libhash.so
 SOURCE = ./internal/hash/hash.cpp
 
 # Targets

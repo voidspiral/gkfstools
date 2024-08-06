@@ -2,3 +2,7 @@
 /cmd/gkfs_host.txt.pid
 /cmd/hash
 /cmd/libhash.so
+/internal/hash/libhash.so
+/stage/stage-in
+/stage-in/libhash.so
+/test/1G

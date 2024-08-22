@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 	"tools/internal/hash"
+	"tools/utils"
 )
 
 func TestGetDaemonPidByRank(t *testing.T) {
@@ -44,13 +45,12 @@ func Test_chnkCountForOffset(t *testing.T) {
 	countSize := int64(4)
 	rankSize := size / countSize
 	blockSize := uint64(512 * 1024)
-	chnkStart := blockIndex(0, blockSize)
-	chnkEnd := blockIndex(0+uint64(size)-1, blockSize)
-	totalChunks := blockCount(0, uint64(size), blockSize)
-	log.Println(chnkStart, chnkEnd, totalChunks)
-	hashValue := hash.GetHash(filename)
-	log.Println(rankSize, hashValue)
+	chnkStart := utils.BlockIndex(0, blockSize)
+	chnkEnd := utils.BlockIndex(0+uint64(size)-1, blockSize)
+	totalChunks := utils.BlockCount(0, uint64(size), blockSize)
+	log.Println(rankSize, chnkStart, chnkEnd, totalChunks)
+
 	filename = "/1G"
-	hashValue = hash.GetHash(filename)
-	log.Println(filename)
+	hashValue := hash.GetHash(filename)
+	log.Println(filename, hashValue)
 }

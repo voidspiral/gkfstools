@@ -34,6 +34,7 @@ func main() {
 	//go func() {
 	//	log.Println(http.ListenAndServe("127.0.0.1:6060", nil))
 	//}()
+	log.SetOutput(os.Stdout)
 	var hostSize int
 	if env := os.Getenv("HOST_SIZE"); env != "" {
 		var err error
@@ -176,6 +177,7 @@ func main() {
 				//}
 			}(uint64(index), chunkId)
 		}
+		wg.Wait()
 		endTime := time.Since(readTime)
 		log.Printf("read time %.3f", endTime.Seconds())
 		//write file
@@ -187,6 +189,7 @@ func main() {
 				go func(index uint64, chunkId uint64) {
 					defer wg.Done()
 					filename := writeBaseDir + strconv.FormatUint(chunkId, 10)
+
 					file, err := os.Create(filename)
 					if err != nil {
 						//TODO graceful handle error
@@ -195,8 +198,10 @@ func main() {
 					}
 					defer file.Close()
 					offset := int64(chunkId * CHUNKSIZE)
+					boffset := int64(index * CHUNKSIZE)
+					log.Println("rank:", rank, "filename: ", filename, "offset :", offset)
 					// TODO handle error
-					WriteChunk(file, readBuffer, CHUNKSIZE, offset, filename)
+					WriteChunk(file, readBuffer[boffset:], CHUNKSIZE, 0, filename)
 				}(uint64(index), chunkId)
 			}
 			wg.Wait()
@@ -204,7 +209,7 @@ func main() {
 		} else {
 			lastChunkId := myChunks[len(myChunks)-1]
 			myChunks = myChunks[:len(myChunks)-1]
-			chunksCount := uint64(len(myChunks))
+			chunksCount := uint64(len(myChunks) - 1)
 			wg := sync.WaitGroup{}
 			writeTime := time.Now()
 			for index, chunkId := range myChunks {
@@ -220,22 +225,30 @@ func main() {
 					}
 					defer file.Close()
 					offset := int64(chunkId * CHUNKSIZE)
+					boffset := int64(index * CHUNKSIZE)
 					// TODO handle error
-					WriteChunk(file, readBuffer, CHUNKSIZE, offset, filename)
+					log.Println("rank:", rank, "filename: ", filename, "offset :", offset)
+					WriteChunk(file, readBuffer[boffset:], CHUNKSIZE, 0, filename)
 				}(uint64(index), chunkId)
 			}
 			wg.Wait()
 			log.Printf("write time :%.3f", time.Since(writeTime).Seconds())
 			//write metadata  in GekkoFS. write operation can be intercepted
+			//offset := (totalChunks - 1) * CHUNKSIZE
+			//_, err := oFile.WriteAt(readBuffer[chunksCount*CHUNKSIZE:chunksCount*CHUNKSIZE+lastChunkSize], int64(offset))
+			//if err != nil {
+			//	log.Fatalf("write metadat error %v", err)
+			//}
 			offset := (totalChunks - 1) * CHUNKSIZE
-			_, err := oFile.WriteAt(readBuffer[chunksCount*CHUNKSIZE:chunksCount*CHUNKSIZE+lastChunkSize], int64(offset))
+			oFile.Seek(int64(offset), os.SEEK_SET)
+			n, err := oFile.Write(readBuffer[chunksCount*CHUNKSIZE : chunksCount*CHUNKSIZE+lastChunkSize])
 			if err != nil {
-				log.Fatalf("write metadat error %v", err)
+				log.Println(err)
 			}
+			log.Printf("write num  %v\n", n)
 			fmt.Println("i am", rank)
 			fmt.Println("last_chunk_id:", lastChunkId)
 		}
-		wg.Wait()
 
 	}
 	// Other logic can continue or be handled here

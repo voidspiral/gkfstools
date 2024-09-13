@@ -6,3 +6,9 @@
 /stage/stage-in
 /stage-in/libhash.so
 /test/1G
+/pkg/
+/test/cpu.prof
+/test/heap.prof
+/test/strace.out
+/stage-in/stage-in
+/stage-in/stage-in.bak

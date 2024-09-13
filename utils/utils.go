@@ -34,7 +34,7 @@ func isAligned(offset uint64, bs uint64) bool {
 }
 
 // blockIndex returns the index of the block that contains the given offset.
-func blockIndex(offset uint64, bs uint64) uint64 {
+func BlockIndex(offset uint64, bs uint64) uint64 {
 	if !isPowerOf2(bs) {
 		log.Fatal("bs must be a power of 2")
 	}
@@ -42,7 +42,7 @@ func blockIndex(offset uint64, bs uint64) uint64 {
 }
 
 // blockCount returns the number of blocks that the range [offset, offset + size) spans.
-func blockCount(offset uint64, size uint64, bs uint64) uint64 {
+func BlockCount(offset uint64, size uint64, bs uint64) uint64 {
 	if !isPowerOf2(bs) {
 		log.Fatal("bs must be a power of 2")
 	}

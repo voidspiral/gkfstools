@@ -12,16 +12,17 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 	"tools/internal/hash"
+	"tools/internal/metadata"
 	"tools/internal/mpi"
 	"tools/utils"
 )
 
 const MAXGOROUTINE = 10000
 
-// CHUNK SIZE default 512k
+// CHUNKSIZE CHUNK SIZE default 512k
 var CHUNKSIZE uint64 = 512 * 1024
+var flage = false
 
 func Debug(rank int) {
 
@@ -51,7 +52,6 @@ func main() {
 	mpi.Init()
 	defer mpi.Finalize()
 
-	//start := time.Now().UnixMilli()
 	comm, err := mpi.NewComm(nil)
 	if err != nil {
 		log.Fatalf("failed to create communicator: %v", err)
@@ -59,17 +59,16 @@ func main() {
 
 	rank := comm.Rank()
 	countRanks := comm.Size()
-	log.Println(hostSize)
 	if hostSize != countRanks {
 		log.Fatalf("host_size is not equal to ranks")
 	}
-	inputPath := os.Args[1]
+	//inputPath := os.Args[1]
 	filename := filepath.Base(os.Args[2])
-	hostsFile := os.Args[3]
+	//hostsFile := os.Args[3]
 	gkfsDataPath := os.Args[4]
 
-	pid := GetDaemonPidByRank(hostsFile, rank)
-	var outputPath string = "/"
+	//pid := GetDaemonPidByRank(hostsFile, rank)
+	outputPath := "/"
 	outputPath += filename
 	writeBaseDir := gkfsDataPath + "/chunks/" + filename + "/"
 	if err := os.Mkdir(writeBaseDir, 0777); err == nil {
@@ -92,11 +91,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	oFile, err := os.Create(os.Args[2])
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer oFile.Close()
+	//oFile, err := os.Create(os.Args[2])
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//defer oFile.Close()
 	rankSize := int(iFileInfo.Size()) / countRanks
 
 	chnkStart := utils.BlockIndex(0, CHUNKSIZE)
@@ -109,26 +108,25 @@ func main() {
 		lastChunkSize = uint64(iFileInfo.Size())
 	}
 	if rank == 0 {
-		fmt.Printf("num of process: %d, file_size: %d, each process_size: %d\n", countRanks, iFileInfo.Size(), rankSize)
-		fmt.Printf("total chunks: %d\n", totalChunks)
-		fmt.Printf("chunk_id start: %d; chunk_id end: %d\n", chnkStart, chnkEnd)
-		fmt.Printf("output file: %v\n", oFile)
-		fmt.Printf("write base dir: %s\n", writeBaseDir)
+		log.Printf("Num of process: %d, file_size: %d, each process_size: %d\n", countRanks, iFileInfo.Size(), rankSize)
+		log.Printf("Total chunks: %d\n", totalChunks)
+		log.Printf("Chunk_id start: %d; chunk_id end: %d\n", chnkStart, chnkEnd)
+		log.Printf("Output file: %v\n", os.Args[2])
+		log.Printf("Write base dir: %s\n", writeBaseDir)
 
-		hash := hash.GetHash(outputPath)
-		fmt.Printf("Hash value of output file: %d\n", hash)
+		hashVal := hash.GetHash(outputPath)
+		fmt.Printf("Hash value of output file: %d\n", hashVal)
 	}
 
 	// Collect all chunk IDs that have the same target for a single rpc bulk transfer
 	targetChnks := make(map[uint64][]uint64)
 	// Target ID for accessing the target_chunks map
-	var targets []uint64
-
+	var targets []uint64 = make([]uint64, 0, int(totalChunks)/countRanks)
 	// The first and last chunk's targets need special processing
-	var chnkStartTarget uint64
 	var chnkEndTarget uint64
+	Num := uint64(hostSize)
 	for chnkId := chnkStart; chnkId <= chnkEnd; chnkId++ {
-		target := hash.GetHash(outputPath+strconv.FormatUint(chnkId, 10)) % uint64(hostSize)
+		target := hash.GetHash(outputPath+strconv.FormatUint(chnkId, 10)) % Num
 
 		if _, exists := targetChnks[target]; !exists {
 			targetChnks[target] = []uint64{chnkId}
@@ -138,80 +136,103 @@ func main() {
 		}
 
 		// Set the target for the first and last chunks
-		if chnkId == chnkStart {
-			chnkStartTarget = target
-		}
+		//if chnkId == chnkStart {
+		//	chnkStartTarget = target
+		//}
 
 		if chnkId == chnkEnd {
+			//target host machine
 			chnkEndTarget = target
 		}
 	}
 	comm.Barrier()
 	myAllDataSize := uint64(len(targetChnks[uint64(rank)])) * CHUNKSIZE
+	var lastBuf []byte
 	if chnkEndTarget == uint64(rank) {
 		// I have the last chunk
 		myAllDataSize = (uint64(len(targetChnks[uint64(rank)]))-1)*CHUNKSIZE + lastChunkSize
+
 	}
+
+	var readStart, writeStart, readEnd, writeEnd float64
 	if myChunks, ok := targetChnks[uint64(rank)]; ok {
 		readBuffer := make([]byte, myAllDataSize)
 		wg := sync.WaitGroup{}
-		readTime := time.Now()
+		sem := make(chan struct{}, MAXGOROUTINE)
+		readStart = mpi.WTime()
 		for index, chunkId := range myChunks {
-
 			wg.Add(1)
 			//TODO refactory ind func
 			go func(i uint64, chunkId uint64) {
 				defer wg.Done()
 				//TODO limit maximum goroutine
-
+				sem <- struct{}{}
 				offset := int64(chunkId * CHUNKSIZE)
 				boffset := i * CHUNKSIZE
+
 				//TODO handle error
-				if chunkId != chnkEndTarget {
-					ReadChunk(iFile, readBuffer[boffset:], CHUNKSIZE, offset)
+				//log.Println("[Debug offset :]", "rank: ", rank, "index:", i, "chunkId: ", chunkId, boffset, " ", offset)
+				if chunkId != chnkEnd {
+					if readNum, err := ReadChunk(iFile, readBuffer[boffset:boffset+CHUNKSIZE], CHUNKSIZE, offset); err != nil {
+						log.Println("read :", readNum, err)
+					}
+					//log.Println("[Debug1]: ", "rank :", rank, "chnk: ", chnkEnd)
+
 				} else {
-					ReadChunk(iFile, readBuffer[boffset:], lastChunkSize, offset)
+
+					if readNum, err := ReadChunk(iFile, readBuffer[boffset:boffset+lastChunkSize], lastChunkSize, offset); err != nil {
+						log.Print("read :", readNum, err)
+					}
+					lastBuf = make([]byte, lastChunkSize)
+					copy(lastBuf, readBuffer[boffset:boffset+lastChunkSize])
+					//log.Println("[Debug1]: ", string(readBuffer[boffset:boffset+lastChunkSize]), "rank :", rank, "chnk: ", chnkEnd, "last buf :", lastBuf)
 				}
 				//if rank == 0 {
 				//	log.Println("read size", rSize)
 				//}
+				<-sem
 			}(uint64(index), chunkId)
 		}
 		wg.Wait()
-		endTime := time.Since(readTime)
-		log.Printf("read time %.3f", endTime.Seconds())
+		readEnd = mpi.WTime()
 		//write file
 		if uint64(rank) != chnkEndTarget {
 			wg := sync.WaitGroup{}
-			writeTime := time.Now()
+			sem := make(chan struct{}, MAXGOROUTINE)
+			writeStart = mpi.WTime()
 			for index, chunkId := range myChunks {
 				wg.Add(1)
 				go func(index uint64, chunkId uint64) {
 					defer wg.Done()
+					sem <- struct{}{}
 					filename := writeBaseDir + strconv.FormatUint(chunkId, 10)
 
 					file, err := os.Create(filename)
 					if err != nil {
-						//TODO graceful handle error
+						//TODO gracefully handle error
 						log.Println(err)
 						return
 					}
 					defer file.Close()
-					offset := int64(chunkId * CHUNKSIZE)
-					boffset := int64(index * CHUNKSIZE)
-					log.Println("rank:", rank, "filename: ", filename, "offset :", offset)
+					//offset := int64(chunkId * CHUNKSIZE)
+					boffset := index * CHUNKSIZE
+
+					//log.Println("[Debug1]: ", "rank :", rank, "boffset: ", boffset)
 					// TODO handle error
-					WriteChunk(file, readBuffer[boffset:], CHUNKSIZE, 0, filename)
+					if writeNum, err := WriteChunk(file, readBuffer[boffset:boffset+CHUNKSIZE], CHUNKSIZE, 0, filename); err != nil {
+						log.Println("write Num: ", writeNum, err)
+					}
+					<-sem
 				}(uint64(index), chunkId)
 			}
 			wg.Wait()
-			log.Printf("write time :%.3f", time.Since(writeTime).Seconds())
+			writeEnd = mpi.WTime()
 		} else {
 			lastChunkId := myChunks[len(myChunks)-1]
 			myChunks = myChunks[:len(myChunks)-1]
-			chunksCount := uint64(len(myChunks) - 1)
+			//chunksCount := uint64(len(myChunks) - 1)
 			wg := sync.WaitGroup{}
-			writeTime := time.Now()
+			writeStart = mpi.WTime()
 			for index, chunkId := range myChunks {
 				wg.Add(1)
 				go func(index uint64, chunkId uint64) {
@@ -219,20 +240,22 @@ func main() {
 					filename := writeBaseDir + strconv.FormatUint(chunkId, 10)
 					file, err := os.Create(filename)
 					if err != nil {
-						//TODO graceful handle error
+						//TODO gracefully handle error
 						log.Println(err)
 						return
 					}
 					defer file.Close()
-					offset := int64(chunkId * CHUNKSIZE)
-					boffset := int64(index * CHUNKSIZE)
+					//offset := int64(chunkId * CHUNKSIZE)
+					boffset := index * CHUNKSIZE
 					// TODO handle error
-					log.Println("rank:", rank, "filename: ", filename, "offset :", offset)
-					WriteChunk(file, readBuffer[boffset:], CHUNKSIZE, 0, filename)
+					//log.Println("rank:", rank, "filename: ", filename, "boffset :", boffset)
+					if writeNum, err := WriteChunk(file, readBuffer[boffset:boffset+CHUNKSIZE], CHUNKSIZE, 0, filename); err != nil {
+						log.Println("Write Num: ", writeNum, err)
+					}
 				}(uint64(index), chunkId)
 			}
 			wg.Wait()
-			log.Printf("write time :%.3f", time.Since(writeTime).Seconds())
+			writeEnd = mpi.WTime()
 			//write metadata  in GekkoFS. write operation can be intercepted
 			//offset := (totalChunks - 1) * CHUNKSIZE
 			//_, err := oFile.WriteAt(readBuffer[chunksCount*CHUNKSIZE:chunksCount*CHUNKSIZE+lastChunkSize], int64(offset))
@@ -240,21 +263,19 @@ func main() {
 			//	log.Fatalf("write metadat error %v", err)
 			//}
 			offset := (totalChunks - 1) * CHUNKSIZE
-			oFile.Seek(int64(offset), os.SEEK_SET)
-			n, err := oFile.Write(readBuffer[chunksCount*CHUNKSIZE : chunksCount*CHUNKSIZE+lastChunkSize])
-			if err != nil {
+			//write last file chunk and file metadata in GekkoFS through syscall_intercept
+			//fmt.Println("[Debug ReadBuffer]", len(lastBuf), " ", string(lastBuf))
+			if err := metadata.WriteMetaData(os.Args[2], lastBuf, offset); err != nil {
 				log.Println(err)
 			}
-			log.Printf("write num  %v\n", n)
+			fmt.Printf("write filename %v\n", os.Args[2])
 			fmt.Println("i am", rank)
 			fmt.Println("last_chunk_id:", lastChunkId)
 		}
 
 	}
-	// Other logic can continue or be handled here
-	log.Println(inputPath, filename, gkfsDataPath, pid, host, hostSize, myAllDataSize, chnkStart, chnkStartTarget)
-	log.Printf("Process rank: %d of %d", rank, rankSize)
-
+	comm.Barrier()
+	fmt.Printf("myRank = %v hostname: %v, read_time = %.6f write_time = %.6f\n", rank, host, readEnd-readStart, writeEnd-writeStart)
 }
 
 func GetDaemonPidByRank(hostFile string, line int) (pid string) {
@@ -298,6 +319,7 @@ func WriteChunk(fh *os.File, buf []byte, size uint64, offset int64, chunkPath st
 			return wroteTotal, errors.New(errMsg)
 		}
 		wroteTotal += uint64(wrote)
+		//log.Println("filename: ", fh.Name(), "wroteTotal:", wroteTotal, "offset :", offset, "size: ", size)
 	}
 
 	return wroteTotal, nil
@@ -321,13 +343,14 @@ func ReadChunk(fh *os.File, buf []byte, size uint64, offset int64) (uint64, erro
 
 			// Formatting error message
 			errMsg := fmt.Sprintf("Failed to read chunk file. File: '%s', size: '%d', offset: '%d', Error: '%s'",
-				size, offset, err.Error())
+				fh.Name(), size, offset, err.Error())
 			return readTotal, errors.New(errMsg)
 		}
 		uread := uint64(read)
 		// Debug output for less-than-requested reads
 		if readTotal+uread < size {
 			fmt.Printf("Read less bytes than requested: '%d'/%d. Total read was '%d'. This is not an error!\n", read, size-readTotal, size)
+			log.Println(string(buf[readTotal:]))
 		}
 
 		readTotal += uread

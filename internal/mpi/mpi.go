@@ -8,12 +8,11 @@
 // license that can be found in the LICENSE file.
 
 //go:build mpi
-// +build mpi
 
 package mpi
 
 /*
-#cgo pkg-config: ompi
+#cgo pkg-config: mpich
 #include "mpi.h"
 
 MPI_Comm     World     = MPI_COMM_WORLD;
@@ -198,7 +197,7 @@ func (cm *Comm) Barrier() error {
 	return Error(C.MPI_Barrier(cm.comm), "Barrier")
 }
 
-//func WTime() float64 {
-//	var t float64 = C.MPI_WTime()
-//	return t
-//}
+func WTime() float64 {
+	time := C.MPI_Wtime()
+	return float64(time)
+}
